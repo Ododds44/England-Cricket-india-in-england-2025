@@ -163,4 +163,23 @@ class JoeRootAnalyzer:
 
 # ---------------- MAIN ----------------
 if __name__ == '__main__':
-    INN_URL = 'https://stats.espncricinfo
+    INN_URL = (
+        'https://stats.espncricinfo.com/ci/engine/stats/player.cgi?'
+        'class=1;player=303669;template=results;view=innings;'
+        'home_or_away=1;opposition=6'
+    )
+    TEAM_URL = (
+        'https://stats.espncricinfo.com/ci/engine/stats/team.cgi?'
+        'class=1;team=1;opposition=6;template=results;view=match;'
+        'home_or_away=1'
+    )
+    analyzer = JoeRootAnalyzer(INN_URL, TEAM_URL)
+    analyzer.load()
+    analyzer.train()
+    analyzer.forecast_series([
+        "Lord's",
+        'Trent Bridge',
+        'Headingley',
+        'Edgbaston',
+        'The Oval'
+    ])
