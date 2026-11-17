@@ -4,7 +4,7 @@ Joe Root - Test innings run-distribution model
 
 Question: before an innings starts, what is the full probability distribution
 of Joe Root's score - not just "how many runs on average", but P(10+), P(50+),
-P(100+), and the fair price for any over/under line?
+and P(100+)?
 
 Method (in one paragraph)
 -------------------------
@@ -25,7 +25,7 @@ prediction only uses innings that had already happened).
 Run:
     python root_model.py backtest          # walk-forward evaluation + charts
     python root_model.py series            # India 2025 pre-series forecast vs actual
-    python root_model.py price --home --first-innings --asof 2026-11-17
+    python root_model.py predict --home --first-innings --asof 2026-11-17
 """
 
 from __future__ import annotations
@@ -67,10 +67,11 @@ def load(path: Path = DATA) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 @dataclass
 class Params:
-    half_life_years: float = 3.0   # weight halves every N years
-    w_other_venue: float = 0.6     # weight on away innings when predicting home (and vice versa)
-    w_other_phase: float = 0.8     # weight on 3rd/4th-inns data when predicting 1st/2nd (and vice versa)
-    prior_strength: float = 40.0   # shrinkage towards career hazard, in "runs of exposure"
+    # defaults = the values chosen by tune() on 2016-2022
+    half_life_years: float = 20.0  # weight halves every N years
+    w_other_venue: float = 1.0     # weight on away innings when predicting home (and vice versa)
+    w_other_phase: float = 1.0     # weight on 3rd/4th-inns data when predicting 1st/2nd (and vice versa)
+    prior_strength: float = 80.0   # shrinkage towards career hazard, in "runs of exposure"
 
 
 def _band_counts(runs, not_out, w):
@@ -129,7 +130,6 @@ class Forecast:
     @property
     def median(self): return int(np.searchsorted(np.cumsum(self.pmf), 0.5))
     def p(self, k): return p_at_least(self.pmf, k)
-    def fair_odds(self, k): return 1 / self.p(k)
 
 
 def forecast(df: pd.DataFrame, asof, home: bool, first_half: bool,
@@ -368,7 +368,7 @@ def cmd_series(df, p):
     chart_series(totals, int(actual.runs.sum()), OUT / "india_2025_series_forecast.png")
 
 
-def cmd_price(df, p, home, first_half, asof):
+def cmd_predict(df, p, home, first_half, asof):
     OUT.mkdir(exist_ok=True)
     chart_survival(df, p, asof, OUT / "root_score_curve.png")
     f = forecast(df, asof, home, first_half, p)
@@ -376,18 +376,15 @@ def cmd_price(df, p, home, first_half, asof):
     when = "1st/2nd" if first_half else "3rd/4th"
     print(f"\nRoot, {where} Test, {when} match innings, as at {asof}")
     print(f"  Expected runs {f.mean:.1f}, median {f.median}")
-    print(f"  {'Line':>8} {'P(over)':>8} {'Fair over':>10} {'Fair under':>11}")
-    for line in [9.5, 19.5, 29.5, 39.5, 49.5, 74.5, 99.5]:
-        po = f.p(int(np.ceil(line)))
-        print(f"  {line:>8} {po:>8.1%} {1/po:>10.2f} {1/(1-po):>11.2f}")
-    print("\n  Value check: bet only if bookmaker decimal odds > fair odds "
-          "(edge = odds x prob - 1).")
+    print(f"  {'Score':>6} {'P(reaches it)':>14}")
+    for k in [10, 20, 30, 40, 50, 75, 100, 150]:
+        print(f"  {str(k) + '+':>6} {f.p(k):>14.1%}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["backtest", "series", "price", "all"])
+    ap.add_argument("command", choices=["backtest", "series", "predict", "all"])
     ap.add_argument("--home", action="store_true")
     ap.add_argument("--first-innings", action="store_true",
                     help="1st/2nd match innings (default: 3rd/4th)")
@@ -397,5 +394,5 @@ if __name__ == "__main__":
     params = cmd_backtest(data) if a.command in ("backtest", "series", "all") else Params()
     if a.command in ("series", "all"):
         cmd_series(data, params)
-    if a.command in ("price", "all"):
-        cmd_price(data, params, a.home, a.first_innings, a.asof)
+    if a.command in ("predict", "all"):
+        cmd_predict(data, params, a.home, a.first_innings, a.asof)

@@ -1,8 +1,8 @@
-# Joe Root – pricing a Test innings
+# Joe Root – predicting a Test innings
 
-**Question:** before Joe Root walks out to bat, what's the chance he makes 10, 50, 100 – and what are fair odds on any runs line?
+**Question:** before Joe Root walks out to bat, what's the chance he makes 10, 50 or 100?
 
-A single "expected runs" number can't be bet on. This model produces Root's **full score distribution** for an innings, tests it **out-of-sample**, and converts it into **fair prices** that can be compared with bookmaker odds.
+A single "expected runs" number hides most of what matters. This model produces Root's **full score distribution** for an innings – the probability of every score – and tests it **out-of-sample** on innings it has never seen.
 
 ![Score curve](output/root_score_curve.png)
 
@@ -11,7 +11,7 @@ A single "expected runs" number can't be bet on. This model produces Root's **fu
 | | |
 |---|---|
 | Data | All 309 of Root's Test innings, Dec 2012 – Sep 2026 (ESPNcricinfo Statsguru), 14,278 runs, 26 not-outs |
-| Next home innings (as at 17 Nov 2026) | Mean 51 runs, median 29 · P(50+) 37% · P(100+) 15% → fair odds 50+ **2.72**, 100+ **6.50** |
+| Next home innings (as at 17 Nov 2026) | Mean 51 runs, median 29 · P(50+) 37% · P(100+) 15% |
 | India 2025, forecast before the series | Median 429 runs (80% range 234–698), 1.3 hundreds expected |
 | India 2025, what happened | **537 runs**, 3 hundreds – 71st percentile of the forecast: a good series, well inside the range |
 
@@ -19,7 +19,7 @@ A single "expected runs" number can't be bet on. This model produces Root's **fu
 
 ## What I found
 
-1. **Root's scoring is remarkably stable.** I tuned how much weight to give recent form, home vs away, and 1st/2nd vs 3rd/4th match innings on 2016–22, then tested on 2023–26. The best out-of-sample setting gave almost **equal weight to everything**: none of those factors improved predictions. For a batter this consistent, recent form is mostly noise. *Hypothesis to test against market prices: if bookmakers move his lines a lot on recent scores, that's where the value is.*
+1. **Root's scoring is remarkably stable.** I tuned how much weight to give recent form, home vs away, and 1st/2nd vs 3rd/4th match innings on 2016–22, then tested on 2023–26. The best out-of-sample setting gave almost **equal weight to everything**: none of those factors improved predictions. For a batter this consistent, recent form is mostly noise.
 2. **Not-outs matter most in the tail.** Counting a 180\* as a dismissal at 180 understates his big-score chances. On the 2023–26 hold-out he made 100+ in 18.1% of innings; the naive count said 12.8%, the model 14.6%, and the model's log loss was 1.4% better. At 10/30/50 the two are level – that part of his distribution is well pinned down by 300 innings either way.
 3. **More model ≠ better model.** The first version (in `legacy/`) used a random forest on 25 innings and forecast **865 runs** for the series – a single number with no uncertainty, 60% above what happened. A ~40-line survival model with honest uncertainty did much better.
 
@@ -41,14 +41,13 @@ Out-of-sample, 2023–2026 (walk-forward: every prediction uses only innings tha
 - **Weights.** Optional decay for older innings, and down-weighting for innings in different conditions (home/away, match innings). Tuned by walk-forward log loss.
 - **Shrinkage.** Each band's hazard is pulled towards his whole-career value, so a band with little data can't produce extreme numbers.
 - **Series.** Monte Carlo of five Tests: one first-half innings each, plus a second innings with the probability he's batted twice in past home Tests (75%).
-- **Prices.** Fair decimal odds = 1 / probability. A bet only has value if the bookmaker's odds beat the fair odds: *edge = odds × prob − 1*.
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
-python root_model.py all --home --first-innings   # backtest + India 2025 + price next innings
-python root_model.py price --asof 2026-11-17      # away / 3rd-4th innings prices
+python root_model.py all --home --first-innings   # backtest + India 2025 + next-innings probabilities
+python root_model.py predict --asof 2026-11-17    # away / 3rd-4th innings probabilities
 python fetch_data.py                              # refresh data from Statsguru
 ```
 

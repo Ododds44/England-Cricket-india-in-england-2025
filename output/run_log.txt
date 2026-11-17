@@ -24,13 +24,12 @@ India 2025 - forecast as at 2025-06-20 (using only earlier innings)
 
 Root, home Test, 1st/2nd match innings, as at 2026-11-17
   Expected runs 51.1, median 29
-      Line  P(over)  Fair over  Fair under
-       9.5    75.7%       1.32        4.11
-      19.5    60.6%       1.65        2.54
-      29.5    49.2%       2.03        1.97
-      39.5    42.6%       2.35        1.74
-      49.5    36.8%       2.72        1.58
-      74.5    23.8%       4.20        1.31
-      99.5    15.4%       6.50        1.18
-
-  Value check: bet only if bookmaker decimal odds > fair odds (edge = odds x prob - 1).
+   Score  P(reaches it)
+     10+          75.7%
+     20+          60.6%
+     30+          49.2%
+     40+          42.6%
+     50+          36.8%
+     75+          23.8%
+    100+          15.4%
+    150+           8.3%
