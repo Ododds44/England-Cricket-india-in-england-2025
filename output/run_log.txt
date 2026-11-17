@@ -1,0 +1,36 @@
+Tuning on 2016-2022 (walk-forward)...
+  best params: Params(half_life_years=20, w_other_venue=1.0, w_other_phase=1.0, prior_strength=80)
+
+Out-of-sample 2023-2026, 76 innings (lower log loss = better).
+Naive = share of all past scores >= k, with not-outs counted as dismissals.
+      innings_scored  actual_hit_rate  model_avg_prob  naive_avg_prob  model_log_loss  naive_log_loss  log_loss_improvement_%
+10+               76            0.789           0.760           0.752          0.5206          0.5218                     0.2
+30+               75            0.480           0.497           0.483          0.6954          0.6944                    -0.1
+50+               75            0.360           0.375           0.362          0.6557          0.6550                    -0.1
+100+              72            0.181           0.146           0.128          0.4799          0.4865                     1.4
+
+India 2025 - forecast as at 2025-06-20 (using only earlier innings)
+  (tuned weights treat 1st/2nd and 3rd/4th innings alike, so both rows match)
+  Per innings, 1st/2nd match inns:  mean 51.6  median 30  P(50+) 38%  P(100+) 15%
+  Per innings, 3rd/4th match inns:  mean 51.6  median 30  P(50+) 38%  P(100+) 15%
+  P(bats twice in a Test) 75%
+  Series total: median 429, mean 451, 80% range 234-698
+  Expected hundreds 1.29
+
+  Actual: 537 runs in 9 innings, 3 hundreds, 1 fifties
+  Actual total sits at the 71% percentile of the forecast
+
+  Original repo approach (RF on 25 home innings v India, venues corrected): 865 runs, single number, no uncertainty
+
+Root, home Test, 1st/2nd match innings, as at 2026-11-17
+  Expected runs 51.1, median 29
+      Line  P(over)  Fair over  Fair under
+       9.5    75.7%       1.32        4.11
+      19.5    60.6%       1.65        2.54
+      29.5    49.2%       2.03        1.97
+      39.5    42.6%       2.35        1.74
+      49.5    36.8%       2.72        1.58
+      74.5    23.8%       4.20        1.31
+      99.5    15.4%       6.50        1.18
+
+  Value check: bet only if bookmaker decimal odds > fair odds (edge = odds x prob - 1).
