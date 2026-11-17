@@ -66,10 +66,3 @@ The original script (`legacy/Joe Root Analysis.py`) no longer ran and had modell
 - 200 trees on 25 data points; a win model on a few dozen matches judged by accuracy.
 
 Data is now saved in `data/`, so results reproduce without scraping.
-
-## Next steps
-
-- **Bookmaker odds.** Record pre-match odds for Root's runs and 50+/100+ markets for a series and measure model edge and closing-line value. That's the real test.
-- **Ball-by-ball data** (Cricsheet) for bowling-attack and pitch effects, and in-play pricing as an innings develops.
-- **Opposition and conditions** as proper covariates (e.g. a hazard model with home, opposition strength and batting position) once there's evidence they add value out-of-sample.
-- Extend to the rest of England's top order and price *top England batter*.
