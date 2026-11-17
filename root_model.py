@@ -205,16 +205,67 @@ def p_second_innings(df, asof) -> float:
     return float((per_test >= 2).mean())
 
 
+NOT_OUT_RATE = 26 / 309   # share of Root's Test innings ending not out (career)
+
+
 def simulate_series(df, p: Params, n_tests=5, asof=SERIES_START, sims=50_000, seed=1):
+    """Simulate Root's series innings by innings.
+
+    Returns per-Test runs (sims x n_tests), innings batted and dismissals, so we
+    can report runs per Test, series total and batting average.
+    """
     rng = np.random.default_rng(seed)
     f1 = forecast(df, asof, True, True, p)
     f2 = forecast(df, asof, True, False, p)
     p2 = p_second_innings(df, asof)
     ks = np.arange(len(f1.pmf))
-    first = rng.choice(ks, size=(sims, n_tests), p=f1.pmf).sum(1)
-    second = (rng.choice(ks, size=(sims, n_tests), p=f2.pmf) *
-              (rng.random((sims, n_tests)) < p2)).sum(1)
-    return f1, f2, p2, first + second
+    first = rng.choice(ks, size=(sims, n_tests), p=f1.pmf)
+    bats2 = rng.random((sims, n_tests)) < p2
+    second = rng.choice(ks, size=(sims, n_tests), p=f2.pmf) * bats2
+    innings = n_tests + bats2.sum(axis=1)
+    not_outs = rng.binomial(innings, NOT_OUT_RATE)
+    dismissals = np.maximum(innings - not_outs, 1)
+    return f1, f2, p2, first + second, innings, dismissals
+
+
+# --------------------------------------------------------------------------
+# Series outcome: link Root's match runs to England's result
+# --------------------------------------------------------------------------
+TESTS = Path(__file__).parent / "data" / "england_home_tests.csv"
+RUN_BUCKETS = [-1, 49, 99, 10_000]
+BUCKET_LABELS = ["<50", "50-99", "100+"]
+RESULTS = ["won", "draw", "lost"]
+
+
+def result_given_root_runs(df, asof=SERIES_START, prior=3.0) -> pd.DataFrame:
+    """England home result rates by Root's runs in the match (Tests before `asof`).
+
+    Each bucket is shrunk towards England's overall home rates with `prior`
+    pseudo-matches, so a thin bucket can't swing to extremes.
+    """
+    t = pd.read_csv(TESTS, parse_dates=["date"])
+    t = t[t.date < pd.Timestamp(asof)]
+    match_runs = df[df.home].groupby("date").runs.sum().rename("root_runs")
+    j = t.merge(match_runs, left_on="date", right_index=True)    # Tests Root played
+    j["bucket"] = pd.cut(j.root_runs, RUN_BUCKETS, labels=BUCKET_LABELS).astype(str)
+    counts = (pd.crosstab(j.bucket, j.result)
+              .reindex(index=BUCKET_LABELS, columns=RESULTS, fill_value=0))
+    overall = counts.sum() / counts.values.sum()
+    rates = (counts + prior * overall).div(counts.sum(axis=1) + prior, axis=0)
+    rates["matches"] = counts.sum(axis=1)
+    return rates
+
+
+def simulate_outcome(per_test_runs, rates, seed=2):
+    """Turn simulated Root match runs into England W/D/L per Test, then a series result."""
+    rng = np.random.default_rng(seed)
+    idx = np.digitize(per_test_runs, RUN_BUCKETS[1:-1], right=True)   # 0,1,2 bucket
+    probs = rates[RESULTS].to_numpy()[idx]                            # sims x tests x 3
+    u = rng.random(per_test_runs.shape)[..., None]
+    outcome = (u > probs.cumsum(-1)).sum(-1)                          # 0 win, 1 draw, 2 loss
+    eng = (outcome == 0).sum(axis=1)
+    ind = (outcome == 2).sum(axis=1)
+    return eng, ind
 
 
 def old_model_forecast(df):
@@ -343,25 +394,56 @@ def cmd_backtest(df):
 
 def cmd_series(df, p):
     OUT.mkdir(exist_ok=True)
-    f1, f2, p2, totals = simulate_series(df, p)
+    f1, f2, p2, per_test, innings, dismissals = simulate_series(df, p)
+    totals = per_test.sum(axis=1)
+    average = totals / dismissals
     actual = df[(df.opposition == "India") & (df.date >= SERIES_START) &
                 (df.date < "2025-09-01")]
+    act_tests = actual.groupby("date").runs.sum()
+    act_avg = actual.runs.sum() / (len(actual) - actual.not_out.sum())
+
     print(f"\nIndia 2025 - forecast as at {SERIES_START} (using only earlier innings)")
-    if abs(f1.mean - f2.mean) < 0.05:
-        print("  (tuned weights treat 1st/2nd and 3rd/4th innings alike, so both rows match)")
-    print(f"  Per innings, 1st/2nd match inns:  mean {f1.mean:.1f}  median {f1.median}"
-          f"  P(50+) {f1.p(50):.0%}  P(100+) {f1.p(100):.0%}")
-    print(f"  Per innings, 3rd/4th match inns:  mean {f2.mean:.1f}  median {f2.median}"
-          f"  P(50+) {f2.p(50):.0%}  P(100+) {f2.p(100):.0%}")
-    print(f"  P(bats twice in a Test) {p2:.0%}")
-    lo, hi = np.percentile(totals, [10, 90])
-    print(f"  Series total: median {np.median(totals):.0f}, mean {totals.mean():.0f}, "
+    print(f"  Per innings: mean {f1.mean:.1f}, median {f1.median}, "
+          f"P(50+) {f1.p(50):.0%}, P(100+) {f1.p(100):.0%}")
+    print(f"  Bats twice in a Test: {p2:.0%} of past home Tests")
+
+    print("\n  1. Root's runs per Test")
+    lo, hi = np.percentile(per_test[:, 0], [10, 90])
+    print(f"     Forecast for any Test: mean {per_test.mean():.0f}, "
           f"80% range {lo:.0f}-{hi:.0f}")
-    hundreds_exp = 5 * f1.p(100) + 5 * p2 * f2.p(100)
-    print(f"  Expected hundreds {hundreds_exp:.2f}")
-    print(f"\n  Actual: {actual.runs.sum()} runs in {len(actual)} innings, "
-          f"{(actual.runs >= 100).sum()} hundreds, {((actual.runs >= 50) & (actual.runs < 100)).sum()} fifties")
-    print(f"  Actual total sits at the {(totals < actual.runs.sum()).mean():.0%} percentile of the forecast")
+    for (d, r), g in zip(act_tests.items(), INDIA_2025):
+        print(f"     Actual  {g:<11} {r:>4}")
+
+    print("\n  2. Series total and average")
+    lo, hi = np.percentile(totals, [10, 90])
+    print(f"     Total:   forecast median {np.median(totals):.0f} (80% range {lo:.0f}-{hi:.0f}); "
+          f"actual {actual.runs.sum()} - {(totals < actual.runs.sum()).mean():.0%} percentile")
+    lo, hi = np.percentile(average, [10, 90])
+    print(f"     Average: forecast median {np.median(average):.1f} (80% range {lo:.0f}-{hi:.0f}); "
+          f"actual {act_avg:.1f}")
+    print(f"     Hundreds: forecast {5 * f1.p(100) + 5 * p2 * f2.p(100):.1f} expected; "
+          f"actual {(actual.runs >= 100).sum()}")
+
+    print("\n  3. Series outcome")
+    rates = result_given_root_runs(df)
+    print("     England home results by Root's runs in the match (before the series):")
+    tbl = (rates[RESULTS] * 100).round(0).astype(int).assign(matches=rates.matches)
+    tbl.index.name = "Root runs"
+    tbl.columns.name = None
+    print("     " + tbl.to_string().replace("\n", "\n     "))
+    eng, ind = simulate_outcome(per_test, rates)
+    res = pd.Series(np.select([eng > ind, eng < ind], ["England", "India"], "Drawn"))
+    share = res.value_counts(normalize=True)
+    score = pd.Series([f"{e}-{i}" for e, i in zip(eng, ind)]).value_counts(normalize=True)
+    print(f"     Series: England win {share.get('England', 0):.0%}, drawn {share.get('Drawn', 0):.0%}, "
+          f"India win {share.get('India', 0):.0%}")
+    print("     Most likely scores (England-India): " +
+          ", ".join(f"{k} {v:.0%}" for k, v in score.head(4).items()))
+    t = pd.read_csv(TESTS, parse_dates=["date"])
+    act = t[(t.opposition == "India") & (t.date >= SERIES_START) & (t.date < "2025-09-01")]
+    aw, al = (act.result == "won").sum(), (act.result == "lost").sum()
+    print(f"     Actual: {aw}-{al} (drawn series), P(2-2) was {score.get(f'{aw}-{al}', 0):.0%}")
+
     n_old, old_total = old_model_forecast(df)
     print(f"\n  Original repo approach (RF on {n_old} home innings v India, venues corrected): "
           f"{old_total:.0f} runs, single number, no uncertainty")
